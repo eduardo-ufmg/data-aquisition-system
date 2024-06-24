@@ -11,8 +11,10 @@
 
 const std::string msg_delimiter      = "\r\n";
 const std::string field_delimiter    =    "|";
+const std::string entry_delimiter    =    ";";
 const std::string sensor_first_field =  "LOG";
 const std::string client_first_field =  "GET";
+const std::string error_msg          =  "ERROR|INVALID_SENSOR_ID\r\n";
 
 const std::regex client_pattern("[\x00-\x7F]{1,32}\|[0-9]+\r\n");
 const std::regex sensor_pattern("[\x00-\x7F]{1,32}\|[0-9]+-[0-9]+-[0-9]+T[0-9]+:[0-9]+:[0-9]+\|[0-9]+.?[0-9]+\r\n");
@@ -27,6 +29,7 @@ struct LogRecord {
 std::time_t string_to_time_t(const std::string& time_string);
 std::string time_t_to_string(std::time_t time);
 std::string extract_msg_field(std::string& message, const std::string& delimiter);
+void string_to_buffer(const std::string& message, boost::asio::streambuf& buffer);
 
 class session : public std::enable_shared_from_this<session> {
 public:
@@ -87,6 +90,31 @@ private:
 
     std::string sample_quantity = extract_msg_field(message, msg_delimiter);
 
+    std::fstream file(sensor_id + ".dat", std::fstream::in | std::fstream::binary);
+
+    if(!file.is_open()) {
+      string_to_buffer(error_msg, write_buffer_);
+    } else {
+      file.seekg(0, std::ios::end);
+      std::streampos file_size = file.tellg();
+      int entry_size = sizeof(LogRecord);
+      int entry_qtty = file_size / entry_size;
+      entry_qtty = std::min(std::stoi(sample_quantity), entry_qtty);
+
+      LogRecord record;
+      std::string response = std::to_string(entry_qtty) + entry_delimiter;
+
+      for(int i = 1; i < entry_qtty; i ++) {
+        file.seekg(-i * entry_size, std::ios::end);
+        file.read((char*)(&record), sizeof(LogRecord));
+        response += time_t_to_string(record.timestamp) + field_delimiter
+                    + std::to_string(record.value) + ((i == entry_qtty - 1) ? msg_delimiter : entry_delimiter);
+      }
+
+      string_to_buffer(response, write_buffer_);
+
+    }
+
     auto self(shared_from_this());
     boost::asio::async_write(socket_, write_buffer_,
       [this, self](boost::system::error_code ec, std::size_t length) {});
@@ -102,7 +130,7 @@ private:
 
     LogRecord record = {string_to_time_t(timestamp), std::stod(value)};
 
-    std::fstream file(sensor_id + ".dat", std::ios::out | std::fstream::binary | std::ios::app);
+    std::fstream file(sensor_id + ".dat", std::fstream::out | std::fstream::binary | std::ios::app);
 
     if(!file.is_open()) {
       std::cerr << "Error opening file" << std::endl;
@@ -181,4 +209,10 @@ std::string extract_msg_field(std::string& message, const std::string& delimiter
   std::string field = message.substr(0, pos);
   message = message.substr(pos + 1);
   return field;
+}
+
+void string_to_buffer(const std::string& message, boost::asio::streambuf& buffer) {
+  buffer.consume(buffer.size());
+  std::ostream os(&buffer);
+  os << message;
 }
