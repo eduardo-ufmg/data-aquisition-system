@@ -16,8 +16,8 @@ const std::string sensor_first_field =  "LOG";
 const std::string client_first_field =  "GET";
 const std::string error_msg          =  "ERROR|INVALID_SENSOR_ID\r\n";
 
-const std::regex client_pattern("[\x00-\x7F]{1,32}\|[0-9]+\r\n");
-const std::regex sensor_pattern("[\x00-\x7F]{1,32}\|[0-9]+-[0-9]+-[0-9]+T[0-9]+:[0-9]+:[0-9]+\|[0-9]+.?[0-9]+\r\n");
+const std::regex client_pattern("[\\w\\s]{1,32}\\|[0-9]+\\r\\n");
+const std::regex sensor_pattern("[\\w\\s]{1,32}\\|\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}\\|[-+]?[0-9]*\\.?[0-9]+\\r\\n");
 
 using boost::asio::ip::tcp;
 
@@ -104,11 +104,11 @@ private:
       LogRecord record;
       std::string response = std::to_string(entry_qtty) + entry_delimiter;
 
-      for(int i = 1; i < entry_qtty; i ++) {
+      for(int i = 1; i <= entry_qtty; i ++) {
         file.seekg(-i * entry_size, std::ios::end);
         file.read((char*)(&record), sizeof(LogRecord));
         response += time_t_to_string(record.timestamp) + field_delimiter
-                    + std::to_string(record.value) + ((i == entry_qtty - 1) ? msg_delimiter : entry_delimiter);
+                    + std::to_string(record.value) + ((i == entry_qtty) ? msg_delimiter : entry_delimiter);
       }
 
       string_to_buffer(response, write_buffer_);
