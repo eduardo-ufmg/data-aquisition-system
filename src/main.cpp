@@ -70,16 +70,16 @@ private:
 
           }
 
+          if(!is_valid) {
+            const std::string fmt_error_msg = "ERROR|INVALID_MESSAGE_FORMAT\r\n";
+            std::cerr << fmt_error_msg << std::endl;
+            string_to_buffer(fmt_error_msg, write_buffer_);
+            auto self(shared_from_this());
+            boost::asio::async_write(socket_, write_buffer_,
+            [this, self](boost::system::error_code ec, std::size_t length) {});
+          }
+
           read_message();
-
-          if(!is_valid)
-            goto invalid_message_format;
-
-          return;
-
-          invalid_message_format:
-          std::cerr << "Invalid message format" << std::endl;
-
         }
       });
   }
