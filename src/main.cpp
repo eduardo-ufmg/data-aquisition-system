@@ -16,7 +16,28 @@ const std::string sensor_first_field =  "LOG";
 const std::string client_first_field =  "GET";
 const std::string error_msg          =  "ERROR|INVALID_SENSOR_ID\r\n";
 
+/**
+ * @brief Regular expression pattern for matching client data.
+ * 
+ * This pattern matches a string that consists of 1 to 32 alphanumeric characters or spaces,
+ * followed by a vertical bar (|), followed by one or more digits, and ending with a carriage return and newline (\r\n).
+ */
 const std::regex client_pattern("[\\w\\s]{1,32}\\|[0-9]+\\r\\n");
+
+/**
+ * @brief Regular expression pattern for matching sensor data.
+ * 
+ * This pattern matches a string that follows the format:
+ * [sensor_name]|[timestamp]|[value]\r\n
+ * 
+ * - [sensor_name]: A sequence of alphanumeric characters and spaces, up to 32 characters long.
+ * - [timestamp]: A timestamp in the format YYYY-MM-DDTHH:MM:SS.ssssss.
+ * - [value]: A numeric value, which can be positive or negative.
+ * 
+ * Example: "Temperature Sensor|2022-01-01T12:00:00.123456|25.6\r\n"
+ * 
+ * @note This pattern assumes that the sensor data is formatted correctly.
+ */
 const std::regex sensor_pattern("[\\w\\s]{1,32}\\|\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}\\|[-+]?[0-9]*\\.?[0-9]+\\r\\n");
 
 using boost::asio::ip::tcp;
@@ -41,6 +62,15 @@ public:
   }
 
 private:
+  /**
+   * @brief Asynchronously reads a message from the socket and processes it.
+   * 
+   * This function uses Boost.Asio to read a message from the socket until a specified delimiter is encountered.
+   * Once a message is received, it checks the format of the message and performs the appropriate action based on the first field of the message.
+   * If the message is valid, it stores sensor data or answers a client.
+   * If the message format is invalid, it sends an error message back to the sender.
+   * After processing a message, it recursively calls itself to read the next message.
+   */
   void read_message() {
     auto self(shared_from_this());
     boost::asio::async_read_until(socket_, read_buffer_, msg_delimiter,
@@ -84,6 +114,15 @@ private:
       });
   }
 
+  /**
+   * @brief Handles the client's request and sends the response.
+   * 
+   * This function is responsible for processing the client's message, extracting the sensor ID and sample quantity,
+   * and retrieving the corresponding data from the file. It then constructs a response message with the requested data
+   * and sends it back to the client.
+   * 
+   * @param message The client's request message.
+   */
   void answer_client(std::string& message) {
 
     std::string sensor_id = extract_msg_field(message, field_delimiter);
@@ -111,6 +150,8 @@ private:
                     + std::to_string(record.value) + ((i == entry_qtty) ? msg_delimiter : entry_delimiter);
       }
 
+      file.close();
+
       string_to_buffer(response, write_buffer_);
 
     }
@@ -120,6 +161,15 @@ private:
       [this, self](boost::system::error_code ec, std::size_t length) {});
   }
 
+  /**
+   * @brief Stores sensor data in a binary file.
+   * 
+   * This function extracts the sensor ID, timestamp, and value from the given message
+   * and stores them in a binary file named after the sensor ID. The data is stored in
+   * the form of a LogRecord struct, which contains the timestamp and value.
+   * 
+   * @param message The message containing the sensor data.
+   */
   void store_sensor_data(std::string& message) {
 
     std::string sensor_id = extract_msg_field(message, field_delimiter);
@@ -190,6 +240,12 @@ int main(int argc, char* argv[]) {
   return 0;
 }
 
+/**
+ * Converts a string representation of time to a std::time_t value.
+ *
+ * @param time_string The string representation of time in the format "%Y-%m-%dT%H:%M:%S".
+ * @return The std::time_t value representing the given time_string.
+ */
 std::time_t string_to_time_t(const std::string& time_string) {
   std::tm tm = {};
   std::istringstream ss(time_string);
@@ -197,6 +253,12 @@ std::time_t string_to_time_t(const std::string& time_string) {
   return std::mktime(&tm);
 }
 
+/**
+ * Converts a time_t value to a string representation in the format "%Y-%m-%dT%H:%M:%S".
+ *
+ * @param time The time_t value to convert.
+ * @return A string representation of the time_t value.
+ */
 std::string time_t_to_string(std::time_t time) {
   std::tm* tm = std::localtime(&time);
   std::ostringstream ss;
@@ -204,6 +266,13 @@ std::string time_t_to_string(std::time_t time) {
   return ss.str();
 }
 
+/**
+ * Extracts a field from a message string based on a delimiter.
+ *
+ * @param message The message string from which to extract the field.
+ * @param delimiter The delimiter used to separate the fields in the message.
+ * @return The extracted field.
+ */
 std::string extract_msg_field(std::string& message, const std::string& delimiter) {
   std::size_t pos = message.find(delimiter);
   std::string field = message.substr(0, pos);
@@ -211,6 +280,15 @@ std::string extract_msg_field(std::string& message, const std::string& delimiter
   return field;
 }
 
+/**
+ * Converts a string to a boost::asio::streambuf.
+ * 
+ * This function takes a string message and converts it into a boost::asio::streambuf object.
+ * The existing content of the buffer is cleared before writing the message to it.
+ * 
+ * @param message The string to be converted to a streambuf.
+ * @param buffer The boost::asio::streambuf object to store the converted message.
+ */
 void string_to_buffer(const std::string& message, boost::asio::streambuf& buffer) {
   buffer.consume(buffer.size());
   std::ostream os(&buffer);
